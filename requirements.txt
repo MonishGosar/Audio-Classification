@@ -1,6 +1,6 @@
 streamlit==1.31.1
 numpy==1.26.3
 librosa==0.10.1
-tensorflow==2.15.0
+tensorflow-cpu==2.16.1
 pydub==0.25.1
 soundfile==0.12.1
