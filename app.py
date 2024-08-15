@@ -54,7 +54,7 @@ if model is None:
     st.error("Failed to load the model. Please check if the model file exists and is accessible.")
     st.stop()
 
-uploaded_file = st.file_uploader("Choose an audio file", type=['wav', 'mp3', 'm4a'])
+uploaded_file = st.file_uploader("Choose an audio file", type=['wav', 'mp3', 'm4a','mp4'])
 
 if uploaded_file is not None:
     file_details = {"FileName": uploaded_file.name, "FileType": uploaded_file.type, "FileSize": uploaded_file.size}
