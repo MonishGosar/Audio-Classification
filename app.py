@@ -72,7 +72,7 @@ if uploaded_file is not None:
             confidence = np.max(prediction) * 100
 
             st.write(f"Predicted class: {predicted_class}")
-            st.write(f"Confidence: {confidence:.2f}%")
+            st.write(f"Accuracy: {confidence:.2f}%")
 
             # Create two columns for FFT and Spectrogram
             col1, col2 = st.columns(2)
