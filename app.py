@@ -71,8 +71,9 @@ if uploaded_file is not None:
             predicted_class = class_names[np.argmax(prediction)]
             confidence = np.max(prediction) * 100
 
-            st.write(f"Predicted class: {predicted_class}")
-            #st.write(f"Confidence: {confidence:.2f}%")
+            # Display the predicted class in bold, larger format, and green color
+            st.markdown(f"<h2 style='text-align: center;'>Predicted class: <strong style='color: green;'>{predicted_class}</strong></h2>", unsafe_allow_html=True)
+            st.write(f"Confidence: {confidence:.2f}%")
 
             # Create two columns for FFT and Spectrogram
             col1, col2 = st.columns(2)
@@ -128,4 +129,3 @@ if uploaded_file is not None:
         except Exception as e:
             st.error(f"An error occurred while processing the audio file: {str(e)}")
             st.write("Please make sure you've uploaded a valid audio file (WAV, MP3, or M4A).")
-
