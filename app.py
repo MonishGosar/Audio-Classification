@@ -75,27 +75,41 @@ if uploaded_file is not None:
             st.markdown(f"<h2 style='text-align: center;'>Predicted class: <strong style='color: green;'>{predicted_class}</strong></h2>", unsafe_allow_html=True)
             st.write(f"Confidence: {confidence:.2f}%")
 
-            # Create two columns for FFT and Spectrogram
-            col1, col2 = st.columns(2)
+            # Create three columns for Linear FFT, Log FFT, and Spectrogram
+            col1, col2, col3 = st.columns(3)
 
             with col1:
-                st.subheader("Simple FFT")
-                # Compute and plot simple FFT
+                st.subheader("Linear FFT")
+                # Compute and plot simple FFT (linear scale)
                 fft_simple = np.abs(np.fft.fft(raw_audio))
                 freqs = np.fft.fftfreq(len(raw_audio), 1/SAMPLE_RATE)
                 
-                fig_fft = go.Figure(data=go.Scatter(x=freqs[:len(freqs)//2], y=fft_simple[:len(fft_simple)//2], mode='lines'))
-                fig_fft.update_layout(
-                    title='FFT',
+                fig_fft_linear = go.Figure(data=go.Scatter(x=freqs[:len(freqs)//2], y=fft_simple[:len(fft_simple)//2], mode='lines'))
+                fig_fft_linear.update_layout(
+                    title='Linear FFT',
                     xaxis_title='Frequency (Hz)',
                     yaxis_title='Magnitude',
                     margin=dict(l=20, r=20, t=40, b=20),
                     height=300,
-                    width=100
+                    width=None
                 )
-                st.plotly_chart(fig_fft, use_container_width=True)
+                st.plotly_chart(fig_fft_linear, use_container_width=True)
 
             with col2:
+                st.subheader("Log FFT")
+                # Compute and plot simple FFT (log scale)
+                fig_fft_log = go.Figure(data=go.Scatter(x=freqs[:len(freqs)//2], y=np.log(fft_simple[:len(fft_simple)//2] + 1e-10), mode='lines'))
+                fig_fft_log.update_layout(
+                    title='Log FFT',
+                    xaxis_title='Frequency (Hz)',
+                    yaxis_title='Log Magnitude',
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    height=300,
+                    width=None
+                )
+                st.plotly_chart(fig_fft_log, use_container_width=True)
+
+            with col3:
                 st.subheader("Spectrogram")
                 # Create spectrogram plot
                 fig_spec = go.Figure(data=go.Heatmap(
@@ -108,7 +122,7 @@ if uploaded_file is not None:
                     yaxis_title='Frequency',
                     margin=dict(l=20, r=20, t=40, b=20),
                     height=300,
-                    width=None  # Let Streamlit decide the width
+                    width=None
                 )
                 st.plotly_chart(fig_spec, use_container_width=True)
 
