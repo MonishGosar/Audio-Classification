@@ -69,11 +69,12 @@ if uploaded_file is not None:
             prediction = model.predict(processed_audio)
             class_names = ['Dog', 'Cat']
             predicted_class = class_names[np.argmax(prediction)]
-            confidence = np.max(prediction) * 100
+            Accuracy = np.max(prediction) * 100
 
             # Display the predicted class in bold, larger format, and green color
             st.markdown(f"<h2 style='text-align: center;'>Predicted class: <strong style='color: green;'>{predicted_class}</strong></h2>", unsafe_allow_html=True)
-            st.write(f"Confidence: {confidence:.2f}%")
+            st.markdown(f"<h3 style='text-align: center;'>Accuracy: <strong style='color: blue;'>{Accuracy:.2f}</strong></h3>", unsafe_allow_html=True)
+
 
             # Create three columns for Linear FFT, Log FFT, and Spectrogram
             col1, col2, col3 = st.columns(3)
