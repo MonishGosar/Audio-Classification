@@ -5,8 +5,6 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 import plotly.graph_objs as go
 import io
-from pydub import AudioSegment
-import tempfile
 import os
 
 # Constants (make sure these match your model's training parameters)
@@ -17,130 +15,193 @@ HOP_LENGTH = 512
 
 st.set_page_config(layout="wide")
 
+st.markdown(
+    """
+    <style>
+    .divider {
+        height: 100%;
+        border-left: 2px solid #bbb;
+        margin-left: 20px;
+        margin-right: 20px;
+        color: black
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# Initialize session state
+if 'chart_type' not in st.session_state:
+    st.session_state.chart_type = None
+if 'results' not in st.session_state:
+    st.session_state.results = []
+
 @st.cache_resource
 def load_model_cached():
-    return load_model('cnn_with_fft.keras')
+    model_path = 'cnn_with_fft.keras'
+    if not os.path.exists(model_path):
+        st.error(f"Model file not found at {model_path}. Please ensure the model file is in the correct location.")
+        st.stop()
+    return load_model(model_path)
 
 def load_and_preprocess_audio(audio_file, sr=SAMPLE_RATE, duration=DURATION):
-    # Load audio file with a fixed duration
-    audio, _ = librosa.load(audio_file, sr=sr, duration=duration)
-    
-    # Pad or truncate the audio to the fixed duration
+    audio_bytes = audio_file.read()
+    audio, _ = librosa.load(io.BytesIO(audio_bytes), sr=sr, duration=duration)
     target_length = duration * sr
     if len(audio) > target_length:
         audio = audio[:target_length]
     else:
         audio = np.pad(audio, (0, max(0, target_length - len(audio))))
-    
-    # Compute FFT
     fft = np.abs(librosa.stft(audio, n_fft=N_FFT, hop_length=HOP_LENGTH))
-    
-    # Reshape for model input
     fft_input = fft.reshape(1, fft.shape[0], fft.shape[1], 1)
-    
     return audio, fft, fft_input
 
-st.title('Cat/Dog Audio Classifier')
+def create_fft_plot(results, plot_type, is_log=False):
+    fig = go.Figure()
+    for result in results:
+        fft_simple = np.abs(np.fft.fft(result['raw_audio']))
+        freqs = np.fft.fftfreq(len(result['raw_audio']), 1/SAMPLE_RATE)
+        y_values = np.log(fft_simple[:len(fft_simple)//2] + 1e-10) if is_log else fft_simple[:len(fft_simple)//2]
+        fig.add_trace(go.Scatter(x=freqs[:len(freqs)//2], y=y_values, mode='lines', name=result['sound']))
 
-model = load_model_cached()
+    fig.update_layout(
+        title=f'{"Log" if is_log else "Linear"} FFT {plot_type}',
+        xaxis_title='Frequency (Hz)',
+        yaxis_title='Log Magnitude' if is_log else 'Magnitude',
+        height=400
+    )
+    return fig
 
-uploaded_file = st.file_uploader("Choose an audio file", type=['wav', 'mp3', 'm4a'])
+def create_spectrogram(fft):
+    return go.Figure(data=go.Heatmap(
+        z=librosa.amplitude_to_db(fft, ref=np.max),
+        colorscale='Viridis'
+    )).update_layout(
+        title='Spectrogram',
+        xaxis_title='Time',
+        yaxis_title='Frequency',
+        height=300
+    )
 
-if uploaded_file is not None:
-    st.audio(uploaded_file)
-    
+def create_waveform(raw_audio):
+    times = np.linspace(0, DURATION, len(raw_audio))
+    return go.Figure(data=go.Scatter(x=times, y=raw_audio, mode='lines')).update_layout(
+        title='Audio Waveform',
+        xaxis_title='Time (s)',
+        yaxis_title='Amplitude',
+        height=300
+    )
+
+def main():
+    st.title('Cat/Dog Audio Classifier')
+
+    model = load_model_cached()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Sound 1")
+        uploaded_file1 = st.file_uploader("Choose Sound 1", type=['wav', 'mp3', 'm4a'], key="file1")
+        if uploaded_file1:
+            st.audio(uploaded_file1)
+
+    with col2:
+        st.subheader("Sound 2")
+        uploaded_file2 = st.file_uploader("Choose Sound 2", type=['wav', 'mp3', 'm4a'], key="file2")
+        if uploaded_file2:
+            st.audio(uploaded_file2)
+
     if st.button('Classify'):
-        try:
-            # Create a temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
-                tmp_filename = tmp_file.name
-            
-            # Convert the uploaded file to wav format
-            audio = AudioSegment.from_file(uploaded_file)
-            audio.export(tmp_filename, format="wav")
-            
-            # Load and preprocess the audio
-            raw_audio, fft, processed_audio = load_and_preprocess_audio(tmp_filename)
-            
-            # Remove the temporary file
-            os.unlink(tmp_filename)
+        st.session_state.results = []
+        for i, file in enumerate([uploaded_file1, uploaded_file2], 1):
+            if file is not None:
+                try:
+                    raw_audio, fft, processed_audio = load_and_preprocess_audio(file)
+                    prediction = model.predict(processed_audio)
+                    class_names = ['Dog', 'Cat']
+                    predicted_class = class_names[np.argmax(prediction)]
+                    confidence = np.max(prediction) * 100
+                    st.session_state.results.append({
+                        'sound': f'Sound {i}',
+                        'predicted_class': predicted_class,
+                        'confidence': confidence,
+                        'raw_audio': raw_audio,
+                        'fft': fft
+                    })
+                except Exception as e:
+                    st.error(f"An error occurred while processing Sound {i}: {str(e)}")
+                    st.write(f"Please make sure you've uploaded a valid audio file for Sound {i} (WAV, MP3, or M4A).")
 
-            # Make prediction
-            prediction = model.predict(processed_audio)
-            class_names = ['Dog', 'Cat']
-            predicted_class = class_names[np.argmax(prediction)]
-            Accuracy = np.max(prediction) * 100
+    # Display results side by side
+    if st.session_state.results:
+        st.subheader("Classification Results")
+        col1, col2 = st.columns(2)
+        for i, result in enumerate(st.session_state.results):
+            with col1 if i == 0 else col2:
+                st.markdown(f"<h4>{result['sound']}</h4>", unsafe_allow_html=True)
+                st.markdown(f"<h5>Predicted class: <strong style='color: green;'>{result['predicted_class']}</strong></h5>", unsafe_allow_html=True)
+                st.write(f"Accuracy: {result['confidence']:.2f}%")
 
-            # Display the predicted class in bold, larger format, and green color
-            st.markdown(f"<h2 style='text-align: center;'>Predicted class: <strong style='color: green;'>{predicted_class}</strong></h2>", unsafe_allow_html=True)
-            st.markdown(f"<h3 style='text-align: center;'>Accuracy: <strong style='color: blue;'>{Accuracy:.2f}</strong></h3>", unsafe_allow_html=True)
-
-
-            # Create three columns for Linear FFT, Log FFT, and Spectrogram
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                st.subheader("Linear FFT")
-                # Compute and plot simple FFT (linear scale)
-                fft_simple = np.abs(np.fft.fft(raw_audio))
-                freqs = np.fft.fftfreq(len(raw_audio), 1/SAMPLE_RATE)
-                
-                fig_fft_linear = go.Figure(data=go.Scatter(x=freqs[:len(freqs)//2], y=fft_simple[:len(fft_simple)//2], mode='lines'))
-                fig_fft_linear.update_layout(
-                    title='Linear FFT',
-                    xaxis_title='Frequency (Hz)',
-                    yaxis_title='Magnitude',
-                    margin=dict(l=20, r=20, t=40, b=20),
-                    height=300,
-                    width=None
-                )
-                st.plotly_chart(fig_fft_linear, use_container_width=True)
-
-            with col2:
-                st.subheader("Log FFT")
-                # Compute and plot simple FFT (log scale)
-                fig_fft_log = go.Figure(data=go.Scatter(x=freqs[:len(freqs)//2], y=np.log(fft_simple[:len(fft_simple)//2] + 1e-10), mode='lines'))
-                fig_fft_log.update_layout(
-                    title='Log FFT',
-                    xaxis_title='Frequency (Hz)',
-                    yaxis_title='Log Magnitude',
-                    margin=dict(l=20, r=20, t=40, b=20),
-                    height=300,
-                    width=None
-                )
-                st.plotly_chart(fig_fft_log, use_container_width=True)
-
-            with col3:
-                st.subheader("Spectrogram")
-                # Create spectrogram plot
-                fig_spec = go.Figure(data=go.Heatmap(
-                    z=librosa.amplitude_to_db(fft, ref=np.max),
-                    colorscale='Viridis'
-                ))
-                fig_spec.update_layout(
-                    title='Spectrogram',
-                    xaxis_title='Time',
-                    yaxis_title='Frequency',
-                    margin=dict(l=20, r=20, t=40, b=20),
-                    height=300,
-                    width=None
-                )
-                st.plotly_chart(fig_spec, use_container_width=True)
-
-            st.subheader("Audio Waveform")
-            # Plot waveform
-            times = np.linspace(0, DURATION, len(raw_audio))
-            fig_wave = go.Figure(data=go.Scatter(x=times, y=raw_audio, mode='lines'))
-            fig_wave.update_layout(
-                title='Audio Waveform',
-                xaxis_title='Time (s)',
-                yaxis_title='Amplitude',
-                margin=dict(l=20, r=20, t=40, b=20),
-                height=300,
-                width=None  # Let Streamlit decide the width
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            st.session_state.chart_type = st.selectbox(
+                "Select Chart Type",
+                ['Overlay', 'Separate'],
+                index=0  # default selection
             )
-            st.plotly_chart(fig_wave, use_container_width=True)
 
-        except Exception as e:
-            st.error(f"An error occurred while processing the audio file: {str(e)}")
-            st.write("Please make sure you've uploaded a valid audio file (WAV, MP3, or M4A).")
+        if st.session_state.chart_type == 'Overlay':
+            st.subheader("Overlay FFT Graphs")
+            st.plotly_chart(create_fft_plot(st.session_state.results, "Overlay", is_log=False), use_container_width=True)
+            st.plotly_chart(create_fft_plot(st.session_state.results, "Overlay", is_log=True), use_container_width=True)
+
+        elif st.session_state.chart_type == 'Separate':
+            st.subheader("Individual Graphs")
+
+            # Ensure we have results for both Sound 1 and Sound 2
+            if len(st.session_state.results) == 2:
+                # Create two columns with a divider in between
+                col1, divider, col2 = st.columns([1, 0.02, 1])
+
+                # For Sound 1 (First Column)
+                with col1:
+                    result = st.session_state.results[0]
+                    st.markdown(f"<h3>Graphs for {result['sound']}</h3>", unsafe_allow_html=True)
+                    linear_fft = create_fft_plot([result], "Individual", is_log=False)
+                    log_fft = create_fft_plot([result], "Individual", is_log=True)
+                    spectrogram = create_spectrogram(result['fft'])
+                    waveform = create_waveform(result['raw_audio'])
+
+                    st.plotly_chart(linear_fft, use_container_width=True)
+                    st.plotly_chart(log_fft, use_container_width=True)
+                    st.plotly_chart(spectrogram, use_container_width=True)
+                    st.plotly_chart(waveform, use_container_width=True)
+
+
+                with divider:
+                    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                # Insert a vertical divider
+                with col2:
+                    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                # For Sound 2 (Second Column)
+                with col2:
+                    result = st.session_state.results[1]
+                    st.markdown(f"<h3>Graphs for {result['sound']}</h3>", unsafe_allow_html=True)
+                    linear_fft = create_fft_plot([result], "Individual", is_log=False)
+                    log_fft = create_fft_plot([result], "Individual", is_log=True)
+                    spectrogram = create_spectrogram(result['fft'])
+                    waveform = create_waveform(result['raw_audio'])
+
+                    st.plotly_chart(linear_fft, use_container_width=True)
+                    st.plotly_chart(log_fft, use_container_width=True)
+                    st.plotly_chart(spectrogram, use_container_width=True)
+                    st.plotly_chart(waveform, use_container_width=True)
+            else:
+                st.write("Please upload two audio files to compare results.")
+
+
+
+
+if __name__ == "__main__":
+    main()
